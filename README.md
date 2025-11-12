@@ -1,148 +1,240 @@
 # MunicipalApplicationPROG7312
-## 📌 Project Overview
+## PROG7312 Portfolio of Evidence – Part 1, 2 & 3 Submission
 
-This Windows Forms application was developed as part of the PROG7312 Portfolio of Evidence (POE) — Parts 1 and 2.
-It allows residents to report municipal service issues, attach media, and track the progress of submitted issues through a dynamic and interactive user interface.
+This Windows Forms municipal reporting system was developed as part of the PROG7312 POE. The application enables residents to submit municipal service reports, attach media, adjust accessibility preferences, and track issue statuses using an advanced, data-structure-driven backend.
 
-The project showcases C# programming mastery through the integration of multiple advanced data structures (LinkedList, Queue, Stack, Dictionary), a modular architecture, and user-friendly UI/UX enhancements.
+The project demonstrates strong C# proficiency, UI/UX awareness, and extensive algorithmic understanding, including custom implementations of:
 
-## 🚀 Features
+Linked Lists
 
-### Issue Reporting
+Stacks
 
-Capture location, category, and description of a municipal fault
+Queues
 
-Attach/remove files with displayed path
+Dictionaries / Hash Lookups
 
-User Engagement Strategies
+Binary Trees
 
-POPIA-aligned consent checkbox (mandatory before submission)
+AVL Trees
 
-Progress bar fills as each field is completed
+Heaps (MinHeap)
 
-### 📊 Issue Tracking & Status Form (Part 2)
+Graphs + Prim’s Minimum Spanning Tree
 
-The Part 2 implementation introduced the Status Form, which demonstrates practical use of multiple C# collections and data management techniques.
+SortedDictionary (Red-Black Tree)
 
-Key Functionalities:
+# 🚀 Application Features
+# 🔹 Part 1 — Report Issue Form
 
-View all reported issues in a data grid.
+A fully interactive form where users can submit municipal service complaints.
 
-Track and update issue statuses (e.g., Pending → Resolved).
+Core Features
 
-Rebuild and refresh indexes dynamically from the shared IssueStore.
+Capture Location, Category, and Description
 
-Search issues by Ticket ID for O(1) lookups.
+Attach and remove multiple media files
 
-View recently accessed issues (Stack) and pending ones (Queue).
+Mandatory POPIA Consent checkbox
 
-Update UI counters in real-time to reflect active data structure states.
+Live validation using ErrorProvider
 
-Data Structure Demonstration:
-Data Structure	Purpose	Implementation
-Dictionary<Guid, Issue>	O(1) lookup of issues by unique ID	_index
-Queue<Guid>	FIFO tracking of pending issues	_pending
-Stack<Guid>	LIFO tracking of recently viewed issues	_recentLookups
-LinkedList<Issue>	Ordered in-memory storage of all issues	IssueStore.Instance.All()
-LinkedList<string>	Attachment path storage	Issue.Attachments
-Additional Enhancements:
+Progress Bar updates with each completed required field
 
-Grid auto-refresh for updated data.
+Accessibility features:
 
-Counters and labels to display number of issues, pending, and viewed.
+Adjustable font size
 
-Error handling for invalid searches or missing issues.
+Light/Dark mode
 
-Modular architecture with separate UI, Domain, and Persistence layers.
+### New Enhancements Based on Lecturer Feedback
 
-Red ❌ icons highlight empty required fields on startup
+✔ Submission Summary Popup
+Users see a generated summary of exactly what they submitted.
 
-Success dialog with ticket ID and status
+✔ User Rating System
+After submission, the app allows users to rate the tool (1–5).
+Rating is stored for future analytics (or can be extended).
 
-Multilingual support (English, isiXhosa/isiZulu, Afrikaans)
+✔ Global settings broadcaster
+Form text updates instantly using runtime resource reapplication.
 
-Font size adjustment for accessibility
+# 📊 Part 2 — Issue Tracking & Status Form
 
-Design Enhancements
+This module showcases the use of multiple interactive data structures, all dynamically synced to the UI.
 
-Light/Dark mode toggle
+Key Functions
 
-Accessible font resizing
+View all reported issues
 
-Multilingual UI options
+Live search by Ticket ID in O(1) time
 
-Data Structures
+Track status transitions (Pending → In Progress → Resolved)
 
-LinkedList<Issue> for storing issues
+Updates all data structures in real-time
 
-Dictionary<Guid, LinkedListNode<Issue>> for fast issue lookups
+### Data Structures Used:
+Structure	Purpose	Example Implementation
+Dictionary<Guid, Issue>	Fast O(1) issue lookup	_index
+Queue	FIFO pending workflow	_pending
+Stack	Recently viewed issues	_recentLookups
+LinkedList	In-memory ordered storage	IssueStore.Instance.All()
+LinkedList (attachments)	File paths storage	Issue.Attachments
+Additional Enhancements
 
-Queue<Guid> for pending issues
+Auto-refresh grid
 
-Stack<Guid> for recent activity tracking
+Live counters
 
-LinkedList<string> for attachments
+Error handling for missing IDs
+
+Modular UI/Domain/Persistence layers
+
+# 🧠 Part 3 — Service Request Status (Advanced DS Project)
+
+Part 3 demonstrates mastery of advanced data structures and algorithms by implementing a smart municipal job-scheduling system.
+
+What This Screen Does
+
+Loads all service requests into optimised structures
+
+Allows priority-driven processing
+
+Provides category recommendations
+
+Performs timestamp indexing
+
+Computes fieldworker routing via MST
+
+Visualises queue and priority behaviour dynamically
+
+# 🧩 Data Structures in Part 3
+## 1️⃣ MinHeap — Priority Processing
+
+Used when clicking Process Next (Priority).
+
+Highest priority = smallest numeric value
+
+Tie-breaker: earliest submitted request
+
+Ensures realistic municipal workflow handling
+
+## 2️⃣ Undo System — Stack
+
+Every processed request is pushed into an undo stack
+
+Provides LIFO rollback
+
+Demonstrates command reversal
+
+## 3️⃣ Category Tree — Binary Tree
+
+Built from all service categories
+
+In-order traversal sorted recommendation list
+
+Shows non-framework tree construction & traversal
+
+## 4️⃣ Timestamp Index — AVL Tree
+
+Key: SubmittedAt.Ticks
+
+Fast lookup and balanced structure
+
+Demonstrates rotations & O(log n) performance
+
+## 5️⃣ SortedDictionary — Date Range Filtering
+
+Red-black tree implementation
+
+Efficient range-scanning for requests within specific dates
+
+## 6️⃣ Graph + Prim’s Minimum Spanning Tree (MST)
+
+Activated via Compute MST button.
+
+Nodes represent requests + depot
+
+Edges weighted by distance and priority
+
+Produces optimal route for municipal technicians
+
+Demonstrates practical real-world graph usage
+
+## 🎨 Design & Accessibility Enhancements
+
+Light/Dark theme toggle
+
+Adjustable font sizes for readability
+
+Dynamic refresh when changing UI settings
 
 ## 🛠️ Installation & Setup
 
-Clone or download this repository.
+Clone or download the repository
 
-Open the solution file in Visual Studio 2022.
+Open the solution in Visual Studio 2022
 
-Build the solution with target framework .NET 8.0 (Windows).
+Build using .NET 8.0 (Windows)
 
-Run the application via Ctrl + F5.
+Run using Ctrl + F5
 
-## 📖 Usage
+No external database is required — everything runs in memory.
 
-Part 1: Report an Issue
+# 📖 Usage Summary
+## Part 1 — Report Issue
 
-Open the app → Main Menu loads.
+Select Report Issue from Main Menu
 
-Click Report Issue.
+Complete required fields
 
-Enter:
+Attach media
 
-Location
+Tick POPIA consent
 
-Category
+Watch progress bar update
 
-Description
+Press Submit
 
-Attach optional media files.
+See:
 
-Tick POPIA Consent checkbox.
+Summary popup
 
-Watch the progress bar fill as you complete fields.
+1–5 star rating
 
-Click Submit → success message displays with Ticket ID.
+Success message (As per lecturers feedback)
 
-Change Font and Language functionality
+## Part 2 — Issue Status
 
-Part 2: Check Issue Status
+Browse issues
 
-From the Main Menu, open Issue Status.
+Search for Ticket IDs
 
-View all current issues in the data grid.
+Watch queues/stacks update live
 
-Search for an issue using its Ticket ID.
+Observe pending and recent trackers
 
-Review issue details and current status.
+## Part 3 — Service Request Status
 
-The Queue, Stack, and Dictionary update automatically as you interact with the form.
+Click Process Next → heap-driven priority execution
 
-## 👨‍💻 Developer Information
+Click Undo → stack-based reversal
+
+Change filters → SortedDictionary-driven
+
+Inspect recommendations → Binary tree traversal
+
+Compute MST → Graph + Prim’s algorithm
+
+## 👨‍💻 Developer
 
 Name: Reuven-Jon Kadalie
-
 Student Number: ST10271460
-
 Module: PROG7312
 
 ## ⚖️ Notes
 
-No database is required for this submission.
+Project intentionally uses no database
 
-All data is stored temporarily in memory using advanced data structures.
+Data is stored in-memory for demonstration purposes
 
-A demo video accompanies this submission to verify functionality.
+Full demonstration video included (Word doc Submission)
