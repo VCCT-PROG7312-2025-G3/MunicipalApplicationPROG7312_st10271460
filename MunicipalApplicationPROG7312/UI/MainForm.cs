@@ -10,9 +10,9 @@ namespace MunicipalApplicationPROG7312.UI
         public MainForm()
         {
             InitializeComponent();
+
            
 
-            // Wire events here (not in Designer)
             btnTileReports.Click += BtnTileReports_Click;
             btnTileEvents.Click += BtnTileEvents_Click;
             btnTileStatus.Click += BtnTileStatus_Click;

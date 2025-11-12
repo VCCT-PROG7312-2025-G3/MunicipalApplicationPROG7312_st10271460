@@ -30,6 +30,7 @@ namespace MunicipalApplicationPROG7312.UI
         {
             InitializeComponent();
             this.UseGlobalSettings();
+            GlobalUiSettings.WireLanguageRefresh(this);
 
             // ErrorProvider operates on this form
             _errors.ContainerControl = this;

@@ -41,8 +41,6 @@
             lblFontSize = new Label();
             cmbTheme = new ComboBox();
             lblTheme = new Label();
-            cmbLanguage = new ComboBox();
-            lblLanguage = new Label();
             header.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)picFlag).BeginInit();
             pnlSettingsMain.SuspendLayout();
@@ -115,8 +113,6 @@
             grpSettings.Controls.Add(lblFontSize);
             grpSettings.Controls.Add(cmbTheme);
             grpSettings.Controls.Add(lblTheme);
-            grpSettings.Controls.Add(cmbLanguage);
-            grpSettings.Controls.Add(lblLanguage);
             grpSettings.FlatStyle = FlatStyle.System;
             grpSettings.Font = new Font("Segoe UI", 10F);
             grpSettings.ForeColor = SystemColors.ActiveCaptionText;
@@ -188,24 +184,6 @@
             lblTheme.TabIndex = 2;
             lblTheme.Text = "Theme";
             // 
-            // cmbLanguage
-            // 
-            cmbLanguage.DropDownStyle = ComboBoxStyle.DropDownList;
-            cmbLanguage.FormattingEnabled = true;
-            cmbLanguage.Location = new Point(150, 46);
-            cmbLanguage.Name = "cmbLanguage";
-            cmbLanguage.Size = new Size(250, 25);
-            cmbLanguage.TabIndex = 1;
-            // 
-            // lblLanguage
-            // 
-            lblLanguage.AutoSize = true;
-            lblLanguage.Location = new Point(30, 50);
-            lblLanguage.Name = "lblLanguage";
-            lblLanguage.Size = new Size(69, 19);
-            lblLanguage.TabIndex = 0;
-            lblLanguage.Text = "Language";
-            // 
             // SettingsForm
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
@@ -233,8 +211,6 @@
         private PictureBox picFlag;
         private Panel pnlSettingsMain;
         private GroupBox grpSettings;
-        private ComboBox cmbLanguage;
-        private Label lblLanguage;
         private NumericUpDown numFontSize;
         private Label lblFontSize;
         private ComboBox cmbTheme;

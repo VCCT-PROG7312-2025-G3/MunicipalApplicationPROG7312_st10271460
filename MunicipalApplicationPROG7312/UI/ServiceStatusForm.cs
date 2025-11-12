@@ -44,6 +44,8 @@ namespace MunicipalApplicationPROG7312.UI
         {
             InitializeComponent();
 
+            GlobalUiSettings.WireLanguageRefresh(this);
+
             Load += ServiceStatusForm_Load;
             btnProcessNext.Click += btnProcessNext_Click;
             btnUndo.Click += btnUndo_Click;

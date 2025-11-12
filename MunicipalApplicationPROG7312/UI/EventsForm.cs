@@ -59,6 +59,7 @@ namespace MunicipalApplicationPROG7312.UI
             // I don’t change layout; I just bind behaviour.
             Load += EventsForm_Load;
 
+            GlobalUiSettings.WireLanguageRefresh(this);
             // Designer already wires btnSearch → ApplyFilters and gridEvents → GridEvents_CellClick.
             // I’ll defensively hook Search if it isn’t.
             btnSearch.Click -= ApplyFilters;
