@@ -1,8 +1,9 @@
+using MunicipalApplicationPROG7312;
 using MunicipalApplicationPROG7312.UI;
 using System;
 using System.Windows.Forms;
 
-namespace MunicipalApplication
+namespace MunicipalApplicationPROG7312
 {
     internal static class Program
     {

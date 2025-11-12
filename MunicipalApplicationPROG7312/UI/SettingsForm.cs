@@ -1,100 +1,125 @@
-﻿using System;                                      // EventArgs
-using System.Drawing;                              // Point, Size
-using System.Windows.Forms;                        // WinForms
-using MunicipalApplicationPROG7312.Persistence;            // SettingsStore
-using MunicipalApplicationPROG7312.Localization;
-using MunicipalApplicationPROG7312.Models;
+﻿using System;
+using System.Drawing;
+using System.Windows.Forms;
+
+// I use the same project namespaces you’ve been using elsewhere.
+using MunicipalApplicationPROG7312;                          // UiKit (runtime theming)
+using MunicipalApplicationPROG7312.Localization;     // L10n
+using MunicipalApplicationPROG7312.Models;           // AppSettings, AppTheme
+using MunicipalApplicationPROG7312.Persistence;      // SettingsStore
 
 namespace MunicipalApplicationPROG7312.UI
 {
-    // Modal dialog for language/theme/font size
-    public class SettingsForm : Form
+    public partial class SettingsForm : Form
     {
-        private readonly ComboBox _cmbLanguage = new ComboBox();               // Language selection
-        private readonly ComboBox _cmbTheme = new ComboBox();                  // Theme selection
-        private readonly NumericUpDown _numFont = new NumericUpDown();         // Base font size
-        private readonly Button _btnOk = new Button();                         // Save
-        private readonly Button _btnCancel = new Button();                     // Cancel
-
         public SettingsForm()
         {
-            UiKit.ApplyTheme(this);                                            // Base aesthetic
-            Text = "Settings";                                                 // Window title
-            ClientSize = new Size(420, 220);                                   // Dialog size
-            FormBorderStyle = FormBorderStyle.FixedDialog;                     // Fixed layout
-            MaximizeBox = false; MinimizeBox = false;                          // No resize
+            // I let the Designer build the UI first.
+            InitializeComponent();
 
-            var header = UiKit.CreateHeader("Settings");                       // Header panel
-            Controls.Add(header);                                              // Add header
+            // I wire the events here so the Designer keeps rendering fine.
+            this.Load += SettingsForm_Load;
+            TryHook(btnSave, btnSave_Click);
+            TryHook(btnCancel, btnCancel_Click);
 
-            // Labels
-            var lblLang = new Label { Text = "Language", AutoSize = true, ForeColor = UiKit.Muted, Location = new Point(20, 76) }; // Label text
-            var lblTheme = new Label { Text = "Theme", AutoSize = true, ForeColor = UiKit.Muted, Location = new Point(20, 116) };  // Label text
-            var lblFont = new Label { Text = "Font size", AutoSize = true, ForeColor = UiKit.Muted, Location = new Point(20, 156) }; // Label text
+            // I prefer runtime theme application here so the preview matches the app.
+            ApplyRuntimeTheme();
 
-            // Language combobox with 4 codes
-            _cmbLanguage.DropDownStyle = ComboBoxStyle.DropDownList;           // Force valid choice
-            _cmbLanguage.Location = new Point(120, 72); _cmbLanguage.Width = 260; // Position/size
-            _cmbLanguage.Items.AddRange(new object[] { "English (en)", "Afrikaans (af)", "isiXhosa (xh)", "isiZulu (zu)" }); // Options
+            // I only add items if the Designer didn’t already add them.
+            if (cmbLanguage != null && cmbLanguage.Items.Count == 0)
+            {
+                cmbLanguage.DropDownStyle = ComboBoxStyle.DropDownList;
+                cmbLanguage.Items.AddRange(new object[]
+                {
+                    "English (en)", "Afrikaans (af)", "isiXhosa (xh)", "isiZulu (zu)"
+                });
+            }
 
-            // Theme combobox
-            _cmbTheme.DropDownStyle = ComboBoxStyle.DropDownList;              // Valid choice only
-            _cmbTheme.Location = new Point(120, 112); _cmbTheme.Width = 260;   // Position/size
-            _cmbTheme.Items.AddRange(new object[] { "Light", "Dark" });        // Themes
+            if (lblTheme != null && cmbTheme.Items.Count == 0)
+            {
+                cmbTheme.DropDownStyle = ComboBoxStyle.DropDownList;
+                cmbTheme.Items.AddRange(new object[] { "Light", "Dark" });
+            }
 
-            // Font size spinner
-            _numFont.Minimum = 8; _numFont.Maximum = 16;                       // Allowed range
-            _numFont.Location = new Point(120, 152); _numFont.Width = 80;      // Position/size
+            if (numFontSize != null)
+            {
+                numFontSize.Minimum = 8;
+                numFontSize.Maximum = 16;
+                if (numFontSize.Value < 8 || numFontSize.Value > 16) numFontSize.Value = 10;
+            }
 
-            // Buttons
-            _btnOk.Text = "Save"; UiKit.StylePrimary(_btnOk);                  // Primary action
-            _btnOk.Size = new Size(115, 44); _btnOk.Location = new Point(260, 170); // Size/position
-            _btnOk.Click += OnSaveClicked;                                      // Wire save
+            // I keep the header label text consistent if it exists.
+            if (lblTitle != null) lblTitle.Text = "Settings";
 
-            _btnCancel.Text = "Cancel"; UiKit.StyleSecondary(_btnCancel);      // Secondary action
-            _btnCancel.Size = new Size(115, 46); _btnCancel.Location = new Point(120, 170); // Size/position
-            _btnCancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); }; // Close
-
-            Controls.AddRange(new Control[] { lblLang, _cmbLanguage, lblTheme, _cmbTheme, lblFont, _numFont, _btnCancel, _btnOk }); // Add controls
-
-            // Load current values
-            var s = SettingsStore.Current;                                      // Read current settings
-            _cmbLanguage.SelectedIndex = CodeToIndex(s.LanguageCode);           // Preselect language
-            _cmbTheme.SelectedIndex = s.Theme == AppTheme.Dark ? 1 : 0;         // Preselect theme
-            _numFont.Value = s.BaseFontSize;                                    // Preselect font size
+            // I keep the credit label readable if you added it.
+            if (lblCredit != null) lblCredit.ForeColor = Color.FromArgb(108, 117, 125);
         }
 
-        private void OnSaveClicked(object sender, EventArgs e)
+        // --- I populate the controls with the current saved values on load.
+        private void SettingsForm_Load(object sender, EventArgs e)
         {
-            var lang = IndexToCode(_cmbLanguage.SelectedIndex);                 // Read chosen language
-            var theme = _cmbTheme.SelectedIndex == 1 ? AppTheme.Dark : AppTheme.Light; // Read theme
-            var size = (int)_numFont.Value;                                     // Read font size
+            var s = SettingsStore.Current;
 
-            L10n.SetLanguage(lang);                                             // Switch L10n immediately
+            if (cmbLanguage != null)
+                cmbLanguage.SelectedIndex = CodeToIndex(s.LanguageCode);
 
-            var next = new AppSettings                                   // Build new settings
+            if (cmbTheme != null)
+                cmbTheme.SelectedIndex = s.Theme == AppTheme.Dark ? 1 : 0;
+
+            if (numFontSize != null)
+                numFontSize.Value = s.BaseFontSize;
+        }
+
+        // --- I save back to SettingsStore and close with OK.
+        private void btnSave_Click(object sender, EventArgs e)
+        {
+            var lang = IndexToCode(cmbLanguage?.SelectedIndex ?? 0);
+            var theme = (cmbTheme?.SelectedIndex ?? 0) == 1 ? AppTheme.Dark : AppTheme.Light;
+            var size = (int)(numFontSize?.Value ?? 10);
+
+            // I update L10n immediately so the app can reflect it.
+            L10n.SetLanguage(lang);
+
+            // I persist the new settings.
+            var next = new AppSettings
             {
                 LanguageCode = lang,
                 Theme = theme,
                 BaseFontSize = size
             };
-            SettingsStore.Update(next);                                         // Save + notify
+            SettingsStore.Update(next);
 
-            DialogResult = DialogResult.OK;                                      // Close as OK
-            Close();                                                             // End dialog
+            DialogResult = DialogResult.OK;
+            Close();
         }
 
-        private static int CodeToIndex(string code)                              // Map "en"->0, "af"->1,...
+        // --- I cancel without saving.
+        private void btnCancel_Click(object sender, EventArgs e)
+        {
+            DialogResult = DialogResult.Cancel;
+            Close();
+        }
+
+        // --- Helper: runtime theme without touching Designer properties.
+        private void ApplyRuntimeTheme()
+        {
+            var s = SettingsStore.Current;
+            UiKit.ApplyRuntimeTheme(this, s.Theme, s.BaseFontSize);
+        }
+
+        // --- Helper: language mapping (matches the combo order above).
+        private int CodeToIndex(string code)
         {
             switch (code)
             {
                 case "af": return 1;
                 case "xh": return 2;
                 case "zu": return 3;
-                default: return 0;
+                default: return 0; // en
             }
         }
-        private static string IndexToCode(int i)                                 // Map index->code
+
+        private string IndexToCode(int i)
         {
             switch (i)
             {
@@ -103,6 +128,14 @@ namespace MunicipalApplicationPROG7312.UI
                 case 3: return "zu";
                 default: return "en";
             }
+        }
+
+        // --- Helper: safe event hookup to avoid null refs if a control was renamed.
+        private void TryHook(Button btn, EventHandler handler)
+        {
+            if (btn == null) return;
+            btn.Click -= handler;
+            btn.Click += handler;
         }
     }
 }

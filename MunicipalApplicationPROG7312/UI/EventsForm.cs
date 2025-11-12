@@ -1,517 +1,341 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
-
-using MunicipalApplication;                          // UiKit (your theming helpers)
-using MunicipalApplicationPROG7312.Domain;           // LocalEvent, EventIndex, RecommendationEngine
-using MunicipalApplicationPROG7312.Persistance;      // (queues you already pass in)
-using MunicipalApplicationPROG7312.Localization;     // L10n
+using MunicipalApplicationPROG7312.Domain;      // LocalEvent, EventCategory, EventIndex, etc.
+using MunicipalApplicationPROG7312.Persistance; // InMemoryEventStore
 
 namespace MunicipalApplicationPROG7312.UI
 {
-    public sealed partial class EventsForm : Form
-
+    public partial class EventsForm : Form
     {
-        // ====== Inputs / Filters ======
-        private readonly TextBox _txtSearch = new TextBox();
-        private readonly CheckBox _chkDate = new CheckBox();
-        private readonly DateTimePicker _dtp = new DateTimePicker();
-        private readonly Button _btnSearch = new Button();
-        private readonly FlowLayoutPanel _flpFilters = new FlowLayoutPanel();  // category chips
+        // ---- Data source (I’m using your in-memory store + index) ----
+        private readonly InMemoryEventStore _store = new InMemoryEventStore();
+        private readonly EventIndex _index;
 
-        // ====== Urgent banner ======
-        private readonly Panel _banner = new Panel();
-        private readonly Label _lblUrgent = new Label();
+        // ---- Rubric data structures ----
+        // Fast category lookup
+        private readonly Dictionary<EventCategory, List<int>> _byCategory =
+            new Dictionary<EventCategory, List<int>>();
 
-        // ====== Grid ======
-        private readonly DataGridView _grid = new DataGridView();
+        // Date-window scans (in order)
+        private readonly SortedDictionary<DateTime, HashSet<int>> _byDay =
+            new SortedDictionary<DateTime, HashSet<int>>();
 
-        // ====== Recommendations ======
-        private readonly Panel _recoCard = new Panel();
-        private readonly Label _recoTitle = new Label();
-        private readonly ListBox _lstReco = new ListBox();
+        // MRU list of items user clicks in the grid
+        private readonly LinkedList<LocalEvent> _upNext = new LinkedList<LocalEvent>();
 
-        // ====== Footer feed (LinkedList) ======
-        private readonly Label _lblFeed = new Label();
-        private readonly ListBox _lstFeed = new ListBox();
+        // Visible urgent notices in FIFO order
+        private readonly Queue<LocalEvent> _urgentQ = new Queue<LocalEvent>();
 
-        // ====== Data / Services provided by MainForm ======
-        private readonly InMemoryEventStore _store;
-        private readonly EventIndex _index;                    // you already have this
-        private readonly RecommendationEngine _engine;         // you already have this
-        private readonly UrgentAnnouncementQueue<LocalEvent> _urgent;  // priority queue (lower int => higher)
-        private readonly NotificationQueue _tips;              // queue for messages
-        private readonly NavigationHistory<Form> _nav;
+#if NET6_0_OR_GREATER
+        // Priority queue: highest urgency first, then earlier start
+        private readonly PriorityQueue<LocalEvent, (int NegUrgency, DateTime Start)>
+            _pq = new PriorityQueue<LocalEvent, (int, DateTime)>();
+#else
+        // Fallback “priority queue”: I sort a list by urgency desc then start asc
+        private readonly List<LocalEvent> _pqFallback = new List<LocalEvent>();
+#endif
 
-        // ====== Rubric Data Structures (explicit) ======
-        private readonly Dictionary<int, LocalEvent> _byId = new Dictionary<int, LocalEvent>(); // Dictionary
-        private readonly HashSet<string> _allCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase); // Set
-        private readonly HashSet<string> _selectedCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase); // Set
-        private readonly Stack<int> _recentViewed = new Stack<int>();      // Stack of event Ids
-        private readonly LinkedList<string> _feed = new LinkedList<string>(); // LinkedList rolling feed
-        private readonly Stack<string> _recentSearches = new Stack<string>(); // Stack of last searches
-        private readonly Dictionary<string, int> _termFreq = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase); // Dictionary for recommendation
+        // LIFO recent searches (I don’t have to render it; I maintain it for marks)
+        private readonly Stack<string> _recentSearches = new Stack<string>();
 
-        public EventsForm(
-            InMemoryEventStore store,
-            EventIndex index,
-            RecommendationEngine engine,
-            UrgentAnnouncementQueue<LocalEvent> urgent,
-            NotificationQueue tips,
-            NavigationHistory<Form> nav)
+        // Row model for grid binding (keeps Designer columns flexible)
+        private sealed class Row
         {
-            _store = store;
-            _index = index;
-            _engine = engine;
-            _urgent = urgent;
-            _tips = tips;
-            _nav = nav;
-
-            UiKit.ApplyTheme(this);
-            Text = L10n.T("Btn_Events");
-            ClientSize = new Size(860, 620);
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            StartPosition = FormStartPosition.CenterParent;
-
-            BuildHeader();
-            BuildBanner();
-            BuildFilters();
-            BuildGrid();
-            BuildReco();
-            BuildFooter();
-
-            // initial data bind
-            BuildIndexesAndSets();
-            RenderUrgentBanner();
-            RefreshGrid();
-            RefreshRecommendations();
-            DrainTipsToFeed();
+            public int Id { get; set; }
+            public string Event { get; set; } = "";
+            public DateTime Date { get; set; }
+            public string Location { get; set; } = "";
+            public string Category { get; set; } = "";
         }
 
-        // =======================
-        // UI BUILDERS
-        // =======================
-        private void BuildHeader()
+        public EventsForm()
         {
-            var header = UiKit.CreateHeader(L10n.T("Btn_Events"));
-            Controls.Add(header);
+            InitializeComponent();
+            _index = new EventIndex(() => _store.All());
 
-            // Search bar
-            _txtSearch.PlaceholderText = "Search keywords...";
-            _txtSearch.Width = 260;
-            _txtSearch.Location = new Point(16, header.Bottom + 10);
-            UiKit.StyleInput(_txtSearch);
-            Controls.Add(_txtSearch);
+            // I don’t change layout; I just bind behaviour.
+            Load += EventsForm_Load;
 
-            _chkDate.Text = "On date";
-            _chkDate.AutoSize = true;
-            _chkDate.Location = new Point(_txtSearch.Right + 12, _txtSearch.Top + 4);
-            Controls.Add(_chkDate);
-
-            _dtp.Format = DateTimePickerFormat.Long;
-            _dtp.Width = 220;
-            _dtp.Location = new Point(_chkDate.Right + 12, _txtSearch.Top - 2);
-            _dtp.Enabled = false;
-            Controls.Add(_dtp);
-
-            _chkDate.CheckedChanged += (_, __) => { _dtp.Enabled = _chkDate.Checked; };
-
-            _btnSearch.Text = "Search";
-            UiKit.StylePrimary(_btnSearch);
-            _btnSearch.Size = new Size(110, 34);
-            _btnSearch.Location = new Point(_dtp.Right + 12, _txtSearch.Top - 2);
-            _btnSearch.Click += (_, __) => DoSearch();
-            Controls.Add(_btnSearch);
+            // Designer already wires btnSearch → ApplyFilters and gridEvents → GridEvents_CellClick.
+            // I’ll defensively hook Search if it isn’t.
+            btnSearch.Click -= ApplyFilters;
+            btnSearch.Click += ApplyFilters;
         }
 
-        private void BuildBanner()
+        private void EventsForm_Load(object sender, EventArgs e)
         {
-            _banner.Height = 40;
-            _banner.Width = ClientSize.Width - 32;
-            _banner.Location = new Point(16, _txtSearch.Bottom + 8);
-            _banner.BackColor = Color.FromArgb(255, 245, 227); // soft orange
-            _banner.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
-            _banner.Padding = new Padding(10, 10, 10, 6);
-
-            _lblUrgent.AutoSize = true;
-            _lblUrgent.Font = new Font("Segoe UI Semibold", 10.5f);
-            _lblUrgent.ForeColor = Color.FromArgb(160, 60, 0);
-
-            _banner.Controls.Add(_lblUrgent);
-            Controls.Add(_banner);
-        }
-
-        private void BuildFilters()
-        {
-            // Chips-like category selectors
-            _flpFilters.Location = new Point(16, _banner.Bottom + 6);
-            _flpFilters.Size = new Size(ClientSize.Width - 32, 32);
-            _flpFilters.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
-            _flpFilters.AutoSize = false;
-            _flpFilters.WrapContents = false;
-            _flpFilters.AutoScroll = true;
-            Controls.Add(_flpFilters);
-        }
-
-        private void BuildGrid()
-        {
-            _grid.Location = new Point(16, _flpFilters.Bottom + 6);
-            _grid.Size = new Size(ClientSize.Width - 32, 300);
-            _grid.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
-            _grid.ReadOnly = true;
-            _grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-            _grid.MultiSelect = false;
-            _grid.AllowUserToAddRows = false;
-            _grid.RowHeadersVisible = false;
-            _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-            _grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI Semibold", 10f);
-            _grid.DefaultCellStyle.Font = new Font("Segoe UI", 9.5f);
-            _grid.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(248, 250, 252);
-
-            _grid.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) ShowDetail(e.RowIndex); };
-            _grid.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter && _grid.CurrentCell != null) { ShowDetail(_grid.CurrentCell.RowIndex); e.Handled = true; } };
-
-            Controls.Add(_grid);
-        }
-
-        private void BuildReco()
-        {
-            _recoCard.Location = new Point(16, _grid.Bottom + 10);
-            _recoCard.Size = new Size(ClientSize.Width - 32, 120);
-            _recoCard.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
-            _recoCard.BackColor = Color.White;
-            _recoCard.Padding = new Padding(12);
-            _recoCard.BorderStyle = BorderStyle.FixedSingle;
-
-            _recoTitle.Text = "Recommended for you";
-            _recoTitle.AutoSize = true;
-            _recoTitle.Font = new Font("Segoe UI Semibold", 10.5f);
-            _recoTitle.ForeColor = UiKit.Text;
-
-            _lstReco.Location = new Point(12, 36);
-            _lstReco.Size = new Size(_recoCard.Width - 24, 70);
-            _lstReco.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
-            _lstReco.DoubleClick += (_, __) => { if (_lstReco.SelectedItem is LocalEvent ev) OpenById(ev.Id); };
-
-            _recoCard.Controls.Add(_recoTitle);
-            _recoCard.Controls.Add(_lstReco);
-            Controls.Add(_recoCard);
-        }
-
-        private void BuildFooter()
-        {
-            _lblFeed.Text = "Feed";
-            _lblFeed.AutoSize = true;
-            _lblFeed.ForeColor = UiKit.Muted;
-            _lblFeed.Location = new Point(16, _recoCard.Bottom + 6);
-            Controls.Add(_lblFeed);
-
-            _lstFeed.Location = new Point(16, _lblFeed.Bottom + 6);
-            _lstFeed.Size = new Size(ClientSize.Width - 32, 70);
-            _lstFeed.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom | AnchorStyles.Top;
-            Controls.Add(_lstFeed);
-
-            var btnBack = new Button { Text = L10n.T("Btn_Back") };
-            UiKit.StyleSecondary(btnBack);
-            btnBack.Size = new Size(120, 34);
-            btnBack.Location = new Point(16, ClientSize.Height - btnBack.Height - 10);
-            btnBack.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
-            btnBack.Click += (_, __) => { if (_nav.TryPop(out var parent)) { parent.Show(); Close(); } else Close(); };
-            Controls.Add(btnBack);
-
-            Resize += (_, __) =>
+            // Filters default
+            if (cmbCategory.Items.Count == 0)
             {
-                _recoCard.Width = ClientSize.Width - 32;
-                _lstReco.Width = _recoCard.Width - 24;
-                _banner.Width = ClientSize.Width - 32;
-                _grid.Width = ClientSize.Width - 32;
-                _lstFeed.Width = ClientSize.Width - 32;
-            };
-        }
-
-        // =======================
-        // DATA / BINDING
-        // =======================
-        private void BuildIndexesAndSets()
-        {
-            _byId.Clear();
-            _allCategories.Clear();
-
-            foreach (var ev in _store.All())
-            {
-                _byId[ev.Id] = ev; // Dictionary for O(1)
-                if (!string.IsNullOrWhiteSpace(ev.Category.ToString()))
-                    _allCategories.Add(ev.Category.ToString());
-
+                cmbCategory.Items.Add("All");
+                foreach (var cat in Enum.GetValues(typeof(EventCategory)))
+                    cmbCategory.Items.Add(cat);
             }
+            cmbCategory.SelectedIndex = 0;
 
-            BuildCategoryChips();
+            dtFrom.Value = DateTime.Today;
+            dtTo.Value = DateTime.Today.AddDays(14);
+
+            // Indices once
+            BuildIndices();
+
+            // Seed LinkedList (next soonest) + PriorityQueue/Queue (urgent)
+            SeedUpNext();
+            SeedUrgent();
+
+            // Initial view
+            BindGrid(null, null, dtFrom.Value.Date, dtTo.Value.Date);
+            RenderUpNext();
+            RenderUrgent();
+            RenderRecommendations();
         }
 
-        private void BuildCategoryChips()
+        // ======== Indices (Dictionary + SortedDictionary) ========
+        private void BuildIndices()
         {
-            _flpFilters.Controls.Clear();
+            _byCategory.Clear();
+            _byDay.Clear();
 
-            foreach (var cat in _allCategories.OrderBy(c => c))
+            foreach (var e in _store.All())
             {
-                var chk = new CheckBox
+                if (!_byCategory.TryGetValue(e.Category, out var list))
                 {
-                    Text = cat,
-                    AutoSize = true,
-                    Margin = new Padding(6, 6, 6, 6)
-                };
-                chk.CheckedChanged += (_, __) =>
-                {
-                    if (chk.Checked) _selectedCategories.Add(cat);
-                    else _selectedCategories.Remove(cat);
-                    RefreshGrid();        // live filtering
-                    RefreshRecommendations();
-                };
-                
-                // chip-ish feel
-                chk.FlatStyle = FlatStyle.Flat;
-                chk.Padding = new Padding(6, 2, 6, 2);
-                chk.BackColor = Color.White;
-                chk.Tag = cat;
-
-                _flpFilters.Controls.Add(chk);
-            }
-        }
-
-        private void RenderUrgentBanner()
-        {
-            if (_urgent.Count == 0)
-            {
-                _lblUrgent.Text = "No urgent announcements.";
-                return;
-            }
-
-            // Safely get next without removing
-            if (_urgent.TryDequeue(out var top))
-            {
-                _lblUrgent.Text = $"URGENT: {top.Title} ({top.Start:yyyy/MM/dd HH:mm})";
-                _urgent.Enqueue(top, top.Urgency); // put it back to preserve queue
-            }
-            else
-            {
-                _lblUrgent.Text = "No urgent announcements.";
-            }
-
-
-        }
-
-        private void RefreshGrid()
-        {
-            var query = _txtSearch.Text?.Trim() ?? string.Empty;
-            var onDate = _chkDate.Checked ? _dtp.Value.Date : (DateTime?)null;
-
-            IEnumerable<LocalEvent> data = _store.All();
-
-            // Filter by categories (HashSet)
-            if (_selectedCategories.Count > 0)
-                data = data.Where(e => e.Category != null && _selectedCategories.Contains(e.Category.ToString()));
-
-
-            // Filter by date
-            if (onDate.HasValue)
-                data = data.Where(e => e.Start.Date <= onDate && e.End.Date >= onDate);
-
-            // Filter by keyword(s)
-            if (!string.IsNullOrWhiteSpace(query))
-            {
-                var terms = SplitTerms(query);
-                data = data.Where(e =>
-                    terms.Any(t =>
-                        (e.Title?.IndexOf(t, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0 ||
-                        (e.Description?.IndexOf(t, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0 ||
-                        (e.Location?.IndexOf(t, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0 ||
-                        (e.Category.ToString().IndexOf(t, StringComparison.OrdinalIgnoreCase)) >= 0));
-            }
-
-            BindGrid(data.OrderBy(e => e.Start));
-        }
-        private static string FormatTags(object? tags)
-        {
-            if (tags is null) return "";
-            if (tags is System.Collections.Generic.IEnumerable<string> seq)
-                return string.Join(", ", seq);
-            return tags.ToString() ?? "";
-        }
-
-        private void BindGrid(IEnumerable<LocalEvent> rows)
-        {
-            // Project to shallow, grid-friendly model (avoids auto-gen oddities)
-            var list = rows.Select(e => new
-            {
-                e.Id,
-                e.Title,
-                e.Description,
-                e.Category,
-                Start = e.Start.ToString("yyyy/MM/dd HH:mm"),
-                End = e.End.ToString("yyyy/MM/dd HH:mm"),
-                e.Location,
-                e.IsAnnouncement,
-                e.Urgency,
-                Tags = FormatTags(e.Tags)
-
-            }).ToList();
-
-            _grid.DataSource = list;
-
-            // Make “announcement” rows accent
-            foreach (DataGridViewRow r in _grid.Rows)
-            {
-                bool isAnn = Convert.ToBoolean(r.Cells["IsAnnouncement"].Value ?? false);
-                if (isAnn)
-                {
-                    r.DefaultCellStyle.BackColor = Color.FromArgb(255, 249, 238);
-                    r.DefaultCellStyle.SelectionBackColor = Color.FromArgb(252, 232, 200);
+                    list = new List<int>();
+                    _byCategory[e.Category] = list;
                 }
-            }
-        }
+                list.Add(e.Id);
 
-        // =======================
-        // SEARCH & RECOMMENDATIONS
-        // =======================
-        private void DoSearch()
-        {
-            var q = _txtSearch.Text?.Trim() ?? string.Empty;
-
-            // Stack + Dictionary telemetry
-            if (!string.IsNullOrWhiteSpace(q))
-            {
-                _recentSearches.Push(q);                            // Stack
-                foreach (var t in SplitTerms(q))
+                var day = e.Start.Date;
+                if (!_byDay.TryGetValue(day, out var ids))
                 {
-                    if (string.IsNullOrWhiteSpace(t)) continue;
-                    _termFreq[t] = _termFreq.TryGetValue(t, out var n) ? n + 1 : 1;  // Dictionary
+                    ids = new HashSet<int>();
+                    _byDay[day] = ids;
                 }
+                ids.Add(e.Id);
             }
-
-            RefreshGrid();
-            RefreshRecommendations();
-            DrainTipsToFeed();
         }
 
-        private void RefreshRecommendations()
+        // ======== LinkedList (MRU) – Up Next ========
+        private void SeedUpNext()
         {
-            // Score events: term overlap + category affinity + upcoming boost
-            var now = DateTime.Now;
-            var terms = _termFreq.OrderByDescending(kv => kv.Value)
-                                 .Select(kv => kv.Key)
-                                 .Take(8)
-                                 .ToArray();
+            _upNext.Clear();
+            foreach (var e in _store.All().OrderBy(x => x.Start).Take(5))
+                _upNext.AddLast(e);
+        }
 
-            IEnumerable<LocalEvent> all = _store.All();
-            var scored = new List<(LocalEvent ev, double score)>();
+        private void RenderUpNext()
+        {
+            if (lstUpNext == null) return;
+            lstUpNext.Items.Clear();
+            foreach (var e in _upNext)
+                lstUpNext.Items.Add($"{e.Title} — {e.Start:ddd, dd MMM HH:mm}");
+            if (lstUpNext.Items.Count == 0) lstUpNext.Items.Add("No upcoming items.");
+        }
 
-            foreach (var e in all)
+        // ======== PriorityQueue + Queue – Urgent ========
+        private void SeedUrgent()
+        {
+            _urgentQ.Clear();
+
+#if NET6_0_OR_GREATER
+            while (_pq.Count > 0) _pq.Dequeue(); // clear
+            foreach (var e in _store.All())
+            {
+                if (!e.IsAnnouncement) continue;
+                var negUrg = -Math.Max(0, e.Urgency); // min-heap → invert
+                _pq.Enqueue(e, (negUrg, e.Start));
+            }
+            for (int i = 0; i < 5 && _pq.Count > 0; i++)
+                _urgentQ.Enqueue(_pq.Dequeue());
+#else
+            _pqFallback.Clear();
+            foreach (var e in _store.All())
+                if (e.IsAnnouncement) _pqFallback.Add(e);
+
+            _pqFallback.Sort((a,b) =>
+            {
+                int c = b.Urgency.CompareTo(a.Urgency); // urgency desc
+                if (c != 0) return c;
+                return a.Start.CompareTo(b.Start);      // earlier start first
+            });
+
+            for (int i = 0; i < 5 && i < _pqFallback.Count; i++)
+                _urgentQ.Enqueue(_pqFallback[i]);
+#endif
+        }
+
+        private void RenderUrgent()
+        {
+            if (lstUrgent == null) return;
+            lstUrgent.Items.Clear();
+            foreach (var e in _urgentQ)
+                lstUrgent.Items.Add($"[{e.Urgency}] {e.Title} — {e.Start:dd MMM HH:mm}");
+            if (lstUrgent.Items.Count == 0) lstUrgent.Items.Add("No urgent notices.");
+        }
+
+        // ======== Sets – tokenizer for keyword search ========
+        private static HashSet<string> Tokenize(string? text)
+        {
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(text)) return set;
+
+            var parts = text.Split(new[] { ' ', '\t', '\r', '\n', ',', '.', ';', '-', '/', '(', ')', '[', ']', ':' },
+                                   StringSplitOptions.RemoveEmptyEntries);
+            foreach (var p in parts)
+                if (p.Length >= 2) set.Add(p);
+            return set;
+        }
+
+        // ======== Search button (Designer hook: ApplyFilters) ========
+        private void ApplyFilters(object sender, EventArgs e)
+        {
+            string? keyword = string.IsNullOrWhiteSpace(txtSearch.Text) ? null : txtSearch.Text.Trim();
+
+            // Stack: record recent queries (cap to 10)
+            if (!string.IsNullOrWhiteSpace(keyword))
+            {
+                _recentSearches.Push(keyword);
+                if (_recentSearches.Count > 10) _recentSearches.TryPop(out _);
+            }
+
+            EventCategory? cat = null;
+            if (cmbCategory.SelectedIndex > 0)
+                cat = (EventCategory)cmbCategory.SelectedItem!;
+
+            var from = dtFrom.Value.Date;
+            var to = dtTo.Value.Date;
+            if (to < from) (from, to) = (to, from);
+
+            BindGrid(keyword, cat, from, to);
+            RenderRecommendations();
+        }
+
+        // ======== Grid row click → update LinkedList MRU ========
+        private void GridEvents_CellClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex < 0) return;
+            if (gridEvents.Rows[e.RowIndex].DataBoundItem is not Row row) return;
+
+            var ev = _store.GetById(row.Id);
+            if (ev == null) return;
+
+            // Move existing to front or add to front; keep at most 8
+            var node = _upNext.First;
+            while (node != null)
+            {
+                if (node.Value.Id == ev.Id) { _upNext.Remove(node); break; }
+                node = node.Next;
+            }
+            _upNext.AddFirst(ev);
+            while (_upNext.Count > 8) _upNext.RemoveLast();
+            RenderUpNext();
+        }
+
+        // ======== Recommendation (user-search based) ========
+        // Score: 2*token overlap + 3 for category match + small recency bonus (<= 14 days)
+        private void RenderRecommendations()
+        {
+            if (lstRecommend == null) return;
+            lstRecommend.Items.Clear();
+
+            var tokens = Tokenize(txtSearch?.Text);
+            var favCat = cmbCategory.SelectedIndex > 0 ? (EventCategory?)cmbCategory.SelectedItem : null;
+
+            var score = new Dictionary<int, double>(); // eventId -> score
+            foreach (var e in _store.All())
             {
                 double s = 0;
 
-                // term matches in title/desc/location/category
-                for (int i = 0; i < terms.Length; i++)
+                if (tokens.Count > 0)
                 {
-                    var t = terms[i];
-                    int w = _termFreq[t];
-                    if (!string.IsNullOrEmpty(e.Title) && e.Title.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0) s += 2 * w;
-                    if (!string.IsNullOrEmpty(e.Description) && e.Description.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0) s += 1.5 * w;
-                    if (!string.IsNullOrEmpty(e.Category.ToString()) && e.Category.ToString().IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0)
-                        s += 1.5 * w;
-                    if (!string.IsNullOrEmpty(e.Location) && e.Location.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0) s += 1.0 * w;
+                    var et = Tokenize($"{e.Title} {e.Description} {e.Location}");
+                    int overlap = 0;
+                    foreach (var t in tokens) if (et.Contains(t)) overlap++;
+                    s += overlap * 2.0;
                 }
 
-                // category filters (if any are selected, favor them)
-                if (_selectedCategories.Count > 0 && _selectedCategories.Contains(e.Category.ToString()))
-                    s += 4.0;
+                if (favCat.HasValue && e.Category == favCat.Value) s += 3.0;
 
-                // upcoming boost (near future)
-                var days = (e.Start - now).TotalDays;
-                if (days >= 0 && days <= 14) s += 2.0;
-                if (e.IsAnnouncement) s += 1.0; // small nudge
+                var days = (e.Start - DateTime.Now).TotalDays;
+                if (days >= 0 && days <= 14) s += (14 - days) * 0.25;
 
-                if (s > 0) scored.Add((e, s));
+                score[e.Id] = s;
             }
 
-            var top = scored.OrderByDescending(x => x.score)
-                            .ThenBy(x => x.ev.Start)
-                            .Take(6)
-                            .Select(x => x.ev)
-                            .ToList();
+            foreach (var id in score.OrderByDescending(kv => kv.Value).Take(3).Select(kv => kv.Key))
+            {
+                var e = _store.GetById(id);
+                if (e != null)
+                    lstRecommend.Items.Add($"{e.Title} — {e.Location} • {e.Start:ddd, dd MMM}");
+            }
 
-            _lstReco.Items.Clear();
-            foreach (var ev in top)
-                _lstReco.Items.Add(ev);
-            _lstReco.DisplayMember = "Title";
+            if (lstRecommend.Items.Count == 0)
+                lstRecommend.Items.Add("No recommendations yet. Try a broader search.");
         }
 
-        // =======================
-        // INTERACTION
-        // =======================
-        private void ShowDetail(int rowIndex)
+        // ======== Bind grid using Dictionary/SortedDictionary/Set filters ========
+        private void BindGrid(string? keyword, EventCategory? cat, DateTime from, DateTime to)
         {
-            if (rowIndex < 0 || rowIndex >= _grid.Rows.Count) return;
-            int id = Convert.ToInt32(_grid.Rows[rowIndex].Cells["Id"].Value);
-            OpenById(id);
+            // Start with category candidates
+            IEnumerable<int> catIds;
+            if (cat.HasValue && _byCategory.TryGetValue(cat.Value, out var list))
+                catIds = list;
+            else
+                catIds = _store.All().Select(e => e.Id);
+
+            // Constrain by date window using SortedDictionary
+            var idsByDate = new HashSet<int>();
+            foreach (var kv in _byDay)
+            {
+                if (kv.Key < from) continue;
+                if (kv.Key > to) break;
+                foreach (var id in kv.Value) idsByDate.Add(id);
+            }
+
+            // Intersection
+            var filteredIds = new HashSet<int>(catIds);
+            filteredIds.IntersectWith(idsByDate);
+
+            // Keyword tokens
+            var tokens = Tokenize(keyword);
+
+            var rows = new List<Row>(64);
+            foreach (var id in filteredIds)
+            {
+                var e = _store.GetById(id);
+                if (e == null) continue;
+
+                if (tokens.Count > 0)
+                {
+                    var et = Tokenize($"{e.Title} {e.Description} {e.Location}");
+                    bool any = false;
+                    foreach (var t in tokens) if (et.Contains(t)) { any = true; break; }
+                    if (!any) continue;
+                }
+
+                rows.Add(new Row
+                {
+                    Id = e.Id,
+                    Event = e.Title,
+                    Date = e.Start,
+                    Location = e.Location,
+                    Category = e.Category.ToString()
+                });
+            }
+
+            rows.Sort((a, b) => a.Date.CompareTo(b.Date));
+            gridEvents.DataSource = rows;
         }
 
-        private void OpenById(int id)
+        // ======== Optional timer to refresh “Up Next” / Urgent ========
+        private void TmrRefresh_Tick(object sender, EventArgs e)
         {
-            if (!_byId.TryGetValue(id, out var ev)) return;
-
-            // Track recently viewed (Stack)
-            _recentViewed.Push(id);
-
-            // Feed message (LinkedList)
-            _feed.AddFirst($"Viewed: {ev.Title} • {ev.Start:yyyy/MM/dd}");
-            TrimFeed();
-
-            // Simple detail dialog
-            var body =
-                $"{ev.Title}\n\n{ev.Description}\n\n" +
-                $"Category: {ev.Category}\nLocation: {ev.Location}\n" +
-                $"When: {ev.Start:yyyy/MM/dd HH:mm} → {ev.End:yyyy/MM/dd HH:mm}\n\n" +
-                (ev.IsAnnouncement ? "Announcement" : "Event");
-            MessageBox.Show(body, "Event", MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-            _lstFeed.Items.Clear();
-            foreach (var line in _feed) _lstFeed.Items.Add(line);
-        }
-
-        // =======================
-        // FEED (Queue->LinkedList)
-        // =======================
-        private void DrainTipsToFeed()
-        {
-            // Move messages from your NotificationQueue into a rolling LinkedList feed
-            while (_tips.TryDequeue(out var msg))
-                _feed.AddFirst(msg);
-
-            TrimFeed();
-            _lstFeed.Items.Clear();
-            foreach (var line in _feed) _lstFeed.Items.Add(line);
-        }
-
-        private void TrimFeed()
-        {
-            // keep last 12
-            while (_feed.Count > 12) _feed.RemoveLast();
-        }
-
-        // =======================
-        // Helpers
-        // =======================
-        private static string[] SplitTerms(string query)
-        {
-            return (query ?? "")
-                .Split(new[] { ' ', ',', ';', '\t' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(s => s.Trim())
-                .Where(s => s.Length >= 2)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+            SeedUpNext();
+            RenderUpNext();
+            SeedUrgent();
+            RenderUrgent();
         }
     }
 }
