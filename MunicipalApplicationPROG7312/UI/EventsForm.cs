@@ -53,6 +53,7 @@ namespace MunicipalApplicationPROG7312.UI
         public EventsForm()
         {
             InitializeComponent();
+            this.UseGlobalSettings();
             _index = new EventIndex(() => _store.All());
 
             // I don’t change layout; I just bind behaviour.
@@ -62,6 +63,11 @@ namespace MunicipalApplicationPROG7312.UI
             // I’ll defensively hook Search if it isn’t.
             btnSearch.Click -= ApplyFilters;
             btnSearch.Click += ApplyFilters;
+
+            btnBack.Click += BtnBack_Click;
+            this.CancelButton = btnBack;
+
+            btnSettings.Click += BtnSettings_Click;
         }
 
         private void EventsForm_Load(object sender, EventArgs e)
@@ -273,6 +279,22 @@ namespace MunicipalApplicationPROG7312.UI
 
             if (lstRecommend.Items.Count == 0)
                 lstRecommend.Items.Add("No recommendations yet. Try a broader search.");
+        }
+        private void BtnBack_Click(object? sender, EventArgs e)
+        {
+            // If shown with ShowDialog(this) from MainForm, Close() returns to it.
+            // If shown modeless, Close() just closes this window.
+            this.Close();
+        }
+
+        private void BtnSettings_Click(object? sender, EventArgs e)
+        {
+            // open SettingsForm as a modal dialog so user can adjust preferences
+            using var s = new SettingsForm();
+            s.ShowDialog(this);
+
+            // optional: reapply theme/language right after user closes Settings
+            this.UseGlobalSettings();
         }
 
         // ======== Bind grid using Dictionary/SortedDictionary/Set filters ========

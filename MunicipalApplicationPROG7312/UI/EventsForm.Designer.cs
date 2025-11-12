@@ -47,6 +47,8 @@
             lstUrgent = new ListBox();
             lstRecommend = new ListBox();
             lblReco = new Label();
+            btnBack = new Button();
+            btnSettings = new Button();
             panel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)picFlag).BeginInit();
             ((System.ComponentModel.ISupportInitialize)gridEvents).BeginInit();
@@ -225,11 +227,31 @@
             lblReco.TabIndex = 16;
             lblReco.Text = "Recommended for you";
             // 
+            // btnBack
+            // 
+            btnBack.Location = new Point(16, 415);
+            btnBack.Name = "btnBack";
+            btnBack.Size = new Size(75, 23);
+            btnBack.TabIndex = 17;
+            btnBack.Text = "Back";
+            btnBack.UseVisualStyleBackColor = true;
+            // 
+            // btnSettings
+            // 
+            btnSettings.Location = new Point(97, 415);
+            btnSettings.Name = "btnSettings";
+            btnSettings.Size = new Size(75, 23);
+            btnSettings.TabIndex = 18;
+            btnSettings.Text = "Settings";
+            btnSettings.UseVisualStyleBackColor = true;
+            // 
             // EventsForm
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(800, 450);
+            Controls.Add(btnSettings);
+            Controls.Add(btnBack);
             Controls.Add(lblReco);
             Controls.Add(lstRecommend);
             Controls.Add(lstUrgent);
@@ -275,5 +297,7 @@
         private ListBox lstUrgent;
         private ListBox lstRecommend;
         private Label lblReco;
+        private Button btnBack;
+        private Button btnSettings;
     }
 }

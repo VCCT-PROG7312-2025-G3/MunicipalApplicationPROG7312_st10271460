@@ -10,6 +10,9 @@ namespace MunicipalApplicationPROG7312.Localization
         public string Name { get; }     // "English", "Afrikaans", ...
         public LangOption(string code, string name) { Code = code; Name = name; }
         public override string ToString() => Name; // what shows in ComboBox
+                                                   // add inside L10n
+        public static event EventHandler? LanguageChanged;
+
     }
 
     public static class L10n
@@ -220,6 +223,30 @@ namespace MunicipalApplicationPROG7312.Localization
                 }
             };
 
+
+        public static void ApplyTo(System.Windows.Forms.Form form)
+        {
+            if (form == null || form.IsDisposed) return;
+
+            void Recurse(System.Windows.Forms.Control c)
+            {
+                // If a control has a Tag string, treat it as a translation key
+                if (c.Tag is string key)
+                {
+                    var txt = T(key);
+                    if (!string.IsNullOrEmpty(txt))
+                        c.Text = txt;
+                }
+
+                // Walk children
+                foreach (System.Windows.Forms.Control child in c.Controls)
+                    Recurse(child);
+            }
+
+            Recurse(form);
+        }
+
+
         // Translate a key for the current language (falls back to key if missing)
         public static string T(string key)
         {
@@ -228,12 +255,20 @@ namespace MunicipalApplicationPROG7312.Localization
             return key;
         }
 
-        // Change language at runtime
+       
         public static void SetLanguage(string code)
         {
             if (!_strings.ContainsKey(code)) code = "en";
-            CurrentLanguageCode = code;
+
+            if (!string.Equals(CurrentLanguageCode, code, StringComparison.OrdinalIgnoreCase))
+            {
+                CurrentLanguageCode = code;
+
+               
+                ApplyToAllOpenForms();
+            }
         }
+
 
         // Language options for the ComboBox (yield to avoid arrays/lists)
         public static IEnumerable<LangOption> LanguageOptions()
@@ -243,6 +278,16 @@ namespace MunicipalApplicationPROG7312.Localization
             yield return new LangOption("xh", "isiXhosa");
             yield return new LangOption("zu", "isiZulu");
         }
+
+        public static void ApplyToAllOpenForms()
+        {
+            foreach (System.Windows.Forms.Form f in System.Windows.Forms.Application.OpenForms)
+            {
+                if (f == null || f.IsDisposed) continue;
+                ApplyTo(f);
+            }
+        }
+
 
         // Categories as an iterator (UI loops and adds items)
         public static IEnumerable<string> Categories()

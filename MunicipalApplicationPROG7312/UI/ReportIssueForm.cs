@@ -1,47 +1,64 @@
-﻿using System;
+﻿// UI/ReportIssueForm.cs
+using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Windows.Forms;
-using System.Drawing; // for layout if we create controls programmatically
+using System.Drawing;
 
 namespace MunicipalApplicationPROG7312.UI
 {
     public partial class ReportIssueForm : Form
     {
-        // stores attachment paths
+        // Store full attachment paths; ListBox shows filenames only
         private readonly LinkedList<string> _attachments = new();
 
-        // error provider shows the red icon like in your screenshot
-        private readonly ErrorProvider _errors = new ErrorProvider() { BlinkStyle = ErrorBlinkStyle.NeverBlink };
+        // Red inline error icons next to invalid fields
+        private readonly ErrorProvider _errors = new ErrorProvider()
+        {
+            BlinkStyle = ErrorBlinkStyle.NeverBlink
+        };
 
-        // progress UI (we'll bind to existing controls if present; otherwise we create them)
+        // Progress UI (bind existing designer controls if present; otherwise create)
         private ProgressBar _prg;
         private Label _lblProgress;
 
-        // how many required fields we track
-        private const int REQUIRED_TOTAL = 4; // Location, Category, Description, Consent
+        // Required checkpoints: Location, Category, Description, Consent
+        private const int REQUIRED_TOTAL = 4;
 
         public ReportIssueForm()
         {
-            InitializeComponent();                                 // builds designer UI
-            _errors.ContainerControl = this;                       // attach error provider to the form
+            InitializeComponent();
+            this.UseGlobalSettings();
 
-            // Hook change events so validation/progress react instantly
-            txtLocation.TextChanged += OnFieldChanged;             // re-validate when location changes
-            cmbCategory.SelectedIndexChanged += OnFieldChanged;    // re-validate when category changes
-            txtDescription.TextChanged += OnFieldChanged;          // re-validate when description changes
-            chkConsent.ItemCheck += Consent_ItemCheck;             // re-validate when consent is ticked/unticked
+            // ErrorProvider operates on this form
+            _errors.ContainerControl = this;
 
-            // Attach buttons (in case not wired in designer)
-            btnAttach.Click += BtnAttach_Click;                    // open file dialog and add attachments
-            btnSubmit.Click += BtnSubmit_Click;                    // validate+submit
+            // Live validation events
+            txtLocation.TextChanged += OnFieldChanged;           // validate on typing
+            cmbCategory.SelectedIndexChanged += OnFieldChanged;  // validate on selection
+            txtDescription.TextChanged += OnFieldChanged;        // validate on typing
 
-            // Bind or create progress UI
-            BindProgressUi();                                      // find existing ProgressBar/Label or create them
-            UpdateValidationAndProgress();                         // initial state (e.g., "Start by adding location")
+            // Consent is a CheckedListBox in your Designer
+            chkConsent.ItemCheck += Consent_ItemCheck;           // revalidate when user ticks/unticks
+
+            // Attachments
+            btnAttach.Click += BtnAttach_Click;                  // add files
+            btnRemoveSelected.Click += BtnRemoveSelected_Click;  // multi-delete
+            lstAttachments.SelectionMode = SelectionMode.MultiExtended;
+
+            // Actions
+            btnSubmit.Click += BtnSubmit_Click;                  // submit
+            btnBack.Click += (s, e) => Close();                  // back to MainForm
+            btnSettings.Click += BtnSettings_Click;              // open Settings
+
+            // Bind/create progress UI and sync initial state
+            BindProgressUi();
+            UpdateValidationAndProgress();
         }
 
-        // -------- Attachments ----------
+        // =============== Attachments ===============
+
         private void BtnAttach_Click(object? sender, EventArgs e)
         {
             using var ofd = new OpenFileDialog
@@ -55,63 +72,95 @@ namespace MunicipalApplicationPROG7312.UI
             {
                 foreach (var file in ofd.FileNames)
                 {
-                    _attachments.AddLast(file);                    // keep full path
-                    lstAttachments.Items.Add(Path.GetFileName(file)); // show short name
+                    _attachments.AddLast(file);                         // keep path
+                    lstAttachments.Items.Add(Path.GetFileName(file));    // show name
                 }
             }
         }
 
-        // -------- Submit ----------
+        private void BtnRemoveSelected_Click(object? sender, EventArgs e)
+        {
+            if (lstAttachments.SelectedIndices.Count == 0) return;
+
+            // Remove items bottom-up so indices don’t shift
+            var indices = lstAttachments.SelectedIndices.Cast<int>()
+                           .OrderByDescending(i => i).ToList();
+
+            foreach (int idx in indices)
+            {
+                // Mirror removal in LinkedList by position
+                var node = _attachments.First;
+                for (int i = 0; i < idx && node != null; i++) node = node.Next;
+                if (node != null) _attachments.Remove(node);
+
+                lstAttachments.Items.RemoveAt(idx);
+            }
+        }
+
+        // =============== Submit / Navigation ===============
+
         private void BtnSubmit_Click(object? sender, EventArgs e)
         {
-            UpdateValidationAndProgress();                         // final validation pass
+            UpdateValidationAndProgress(); // final pass
 
             if (CompletedCount() < REQUIRED_TOTAL)
             {
-                MessageBox.Show("Please complete Location, Category, Description and POPIA consent.",
-                                "Missing info", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(
+                    "Please complete Location, Category, Description and POPIA consent.",
+                    "Missing info",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+
+                FocusFirstInvalid();
                 return;
             }
 
             MessageBox.Show("Issue submitted successfully!", "Success",
                             MessageBoxButtons.OK, MessageBoxIcon.Information);
 
-            // reset form
-            cmbCategory.SelectedIndex = -1;                        // reset selection
-            txtLocation.Clear();                                   // reset location
-            txtDescription.Clear();                                // reset description
-            lstAttachments.Items.Clear();                          // clear list
-            _attachments.Clear();                                  // clear store
-            if (chkConsent.Items.Count > 0)                        // uncheck consent if present
-                chkConsent.SetItemChecked(0, false);
+            // Reset form
+            cmbCategory.SelectedIndex = -1;
+            txtLocation.Clear();
+            txtDescription.Clear();
 
-            UpdateValidationAndProgress();                         // reset progress/errors
+            // Uncheck everything in consent list
+            for (int i = 0; i < chkConsent.Items.Count; i++)
+                chkConsent.SetItemChecked(i, false);
+
+            lstAttachments.Items.Clear();
+            _attachments.Clear();
+
+            UpdateValidationAndProgress();
         }
 
-        // -------- Live validation & progress ----------
-        private void OnFieldChanged(object? sender, EventArgs e)
+        private void BtnSettings_Click(object? sender, EventArgs e)
         {
-            UpdateValidationAndProgress();                         // single entry point for all field changes
+            using var f = new SettingsForm();
+            f.ShowDialog(this); // modal
         }
+
+        // =============== Validation + Progress ===============
+
+        private void OnFieldChanged(object? sender, EventArgs e) => UpdateValidationAndProgress();
 
         private void Consent_ItemCheck(object? sender, ItemCheckEventArgs e)
         {
-            // ItemCheck fires before the CheckedItems updates; defer update to after the state changes
+            // ItemCheck fires before the CheckedItems collection updates; defer update
             BeginInvoke(new Action(UpdateValidationAndProgress));
         }
 
         private void UpdateValidationAndProgress()
         {
-            // validate each field and set/clear inline error
             ValidateLocation();
             ValidateCategory();
             ValidateDescription();
             ValidateConsent();
 
-            // compute progress
-            var completed = CompletedCount();
-            _prg.Maximum = REQUIRED_TOTAL;                         // total required checkpoints
-            _prg.Value = Math.Min(completed, _prg.Maximum);        // guard against overflow
+            int completed = CompletedCount();
+            _prg.Maximum = REQUIRED_TOTAL;
+            _prg.Value = Math.Min(completed, _prg.Maximum);
+            btnSubmit.Enabled = (completed == REQUIRED_TOTAL);
+
             _lblProgress.Text = completed switch
             {
                 0 => "Start by adding location",
@@ -122,49 +171,57 @@ namespace MunicipalApplicationPROG7312.UI
 
         private void ValidateLocation()
         {
-            var ok = !string.IsNullOrWhiteSpace(txtLocation.Text); // location must not be empty
+            bool ok = !string.IsNullOrWhiteSpace(txtLocation.Text);
             _errors.SetError(txtLocation, ok ? "" : "Location is required");
         }
 
         private void ValidateCategory()
         {
-            var ok = cmbCategory.SelectedIndex >= 0;               // must choose a category
+            bool ok = cmbCategory.SelectedIndex >= 0;
             _errors.SetError(cmbCategory, ok ? "" : "Select a category");
         }
 
         private void ValidateDescription()
         {
-            var ok = !string.IsNullOrWhiteSpace(txtDescription.Text); // description must not be empty
+            bool ok = !string.IsNullOrWhiteSpace(txtDescription.Text);
             _errors.SetError(txtDescription, ok ? "" : "Add a brief description");
         }
 
         private void ValidateConsent()
         {
-            var ok = chkConsent.CheckedItems.Count > 0;            // must tick POPIA consent
+            bool ok = chkConsent.CheckedItems.Count > 0; // CheckedListBox only
             _errors.SetError(chkConsent, ok ? "" : "Consent is required");
         }
 
         private int CompletedCount()
         {
             int count = 0;
-            if (string.IsNullOrWhiteSpace(_errors.GetError(txtLocation))) count++;      // location valid
-            if (string.IsNullOrWhiteSpace(_errors.GetError(cmbCategory))) count++;      // category valid
-            if (string.IsNullOrWhiteSpace(_errors.GetError(txtDescription))) count++;   // description valid
-            if (string.IsNullOrWhiteSpace(_errors.GetError(chkConsent))) count++;       // consent valid
+            if (string.IsNullOrWhiteSpace(_errors.GetError(txtLocation))) count++;
+            if (string.IsNullOrWhiteSpace(_errors.GetError(cmbCategory))) count++;
+            if (string.IsNullOrWhiteSpace(_errors.GetError(txtDescription))) count++;
+            if (string.IsNullOrWhiteSpace(_errors.GetError(chkConsent))) count++;
             return count;
         }
 
-        // -------- Progress UI plumbing ----------
+        private void FocusFirstInvalid()
+        {
+            if (!string.IsNullOrWhiteSpace(_errors.GetError(txtLocation))) { txtLocation.Focus(); return; }
+            if (!string.IsNullOrWhiteSpace(_errors.GetError(cmbCategory))) { cmbCategory.Focus(); cmbCategory.DroppedDown = true; return; }
+            if (!string.IsNullOrWhiteSpace(_errors.GetError(txtDescription))) { txtDescription.Focus(); return; }
+            if (!string.IsNullOrWhiteSpace(_errors.GetError(chkConsent))) { chkConsent.Focus(); return; }
+        }
+
+        // =============== Progress UI plumbing ===============
+
         private void BindProgressUi()
         {
-           
-            _prg = prgReport ?? CreateProgressBar();               
-            _lblProgress = lblProgress ?? CreateProgressLabel();   
+            // If you already have prgReport/lblProgress in Designer, they’ll be used.
+            _prg = prgReport ?? CreateProgressBar();
+            _lblProgress = lblProgress ?? CreateProgressLabel();
         }
 
         private ProgressBar CreateProgressBar()
         {
-            // create a slim bar under the attachments box (like your screenshot)
             var bar = new ProgressBar
             {
                 Name = "prgReport",
@@ -172,13 +229,12 @@ namespace MunicipalApplicationPROG7312.UI
                 Style = ProgressBarStyle.Continuous
             };
 
-            Control host = lstAttachments as Control ?? (Control)this;
+            // Place under attachments list; fallback to form if needed
+            Control host = lstAttachments ?? (Control)this;
             bar.Width = host.Width;
             bar.Left = host.Left;
             bar.Top = host.Bottom + 6;
 
-
-            // add to same parent so it aligns nicely
             (host.Parent ?? this).Controls.Add(bar);
             bar.BringToFront();
             return bar;
@@ -193,7 +249,6 @@ namespace MunicipalApplicationPROG7312.UI
                 Text = "Start by adding location"
             };
 
-            // sit just under the progress bar
             lbl.Left = _prg.Left;
             lbl.Top = _prg.Bottom + 6;
 

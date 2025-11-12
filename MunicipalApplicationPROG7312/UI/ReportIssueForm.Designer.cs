@@ -36,10 +36,10 @@ namespace MunicipalApplicationPROG7312.UI
             btnSubmit = new Button();
             chkConsent = new CheckedListBox();
             lstAttachments = new ListBox();
-            btnExit = new Button();
+            btnBack = new Button();
             grpBox = new GroupBox();
             lblProgress = new Label();
-            btnRemove = new Button();
+            btnRemoveSelected = new Button();
             prgReport = new ProgressBar();
             panel1 = new Panel();
             btnSettings = new Button();
@@ -129,21 +129,21 @@ namespace MunicipalApplicationPROG7312.UI
             lstAttachments.Size = new Size(325, 154);
             lstAttachments.TabIndex = 7;
             // 
-            // btnExit
+            // btnBack
             // 
-            btnExit.BackColor = Color.White;
-            btnExit.Location = new Point(185, 451);
-            btnExit.Name = "btnExit";
-            btnExit.Size = new Size(140, 36);
-            btnExit.TabIndex = 10;
-            btnExit.Text = "Back";
-            btnExit.UseVisualStyleBackColor = false;
+            btnBack.BackColor = Color.White;
+            btnBack.Location = new Point(185, 451);
+            btnBack.Name = "btnBack";
+            btnBack.Size = new Size(140, 36);
+            btnBack.TabIndex = 10;
+            btnBack.Text = "Back";
+            btnBack.UseVisualStyleBackColor = false;
             // 
             // grpBox
             // 
             grpBox.BackColor = SystemColors.ButtonFace;
             grpBox.Controls.Add(lblProgress);
-            grpBox.Controls.Add(btnRemove);
+            grpBox.Controls.Add(btnRemoveSelected);
             grpBox.Controls.Add(prgReport);
             grpBox.Controls.Add(lstAttachments);
             grpBox.Controls.Add(btnAttach);
@@ -162,14 +162,14 @@ namespace MunicipalApplicationPROG7312.UI
             lblProgress.TabIndex = 10;
             lblProgress.Text = "Progress";
             // 
-            // btnRemove
+            // btnRemoveSelected
             // 
-            btnRemove.Location = new Point(192, 22);
-            btnRemove.Name = "btnRemove";
-            btnRemove.Size = new Size(150, 34);
-            btnRemove.TabIndex = 9;
-            btnRemove.Text = "Remove Selected";
-            btnRemove.UseVisualStyleBackColor = true;
+            btnRemoveSelected.Location = new Point(192, 22);
+            btnRemoveSelected.Name = "btnRemoveSelected";
+            btnRemoveSelected.Size = new Size(150, 34);
+            btnRemoveSelected.TabIndex = 9;
+            btnRemoveSelected.Text = "Remove Selected";
+            btnRemoveSelected.UseVisualStyleBackColor = true;
             // 
             // prgReport
             // 
@@ -213,7 +213,7 @@ namespace MunicipalApplicationPROG7312.UI
             ClientSize = new Size(780, 540);
             Controls.Add(panel1);
             Controls.Add(grpBox);
-            Controls.Add(btnExit);
+            Controls.Add(btnBack);
             Controls.Add(lblCategory);
             Controls.Add(cmbCategory);
             Controls.Add(lblLocation);
@@ -232,12 +232,12 @@ namespace MunicipalApplicationPROG7312.UI
             ResumeLayout(false);
             PerformLayout();
         }
-        private Button btnExit;
+        private Button btnBack;
         private GroupBox grpBox;
         private ProgressBar prgReport;
         private Panel panel1;
         private Label lblReportIssues;
-        private Button btnRemove;
+        private Button btnRemoveSelected;
         private Button btnSettings;
         private Label lblProgress;
     }
